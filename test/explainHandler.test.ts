@@ -1,0 +1,224 @@
+import { test } from "vitest";
+import assert from "node:assert/strict";
+import { subjects } from "../src/content/index.js";
+import { createHandler, RATE_LIMIT, type HandlerOptions } from "../lib/explainHandler.js";
+import { buildSystemPrompt, MAX_DRAFT_LENGTH } from "../lib/explainPrompt.js";
+
+function mockReq(overrides: Record<string, unknown> = {}) {
+  return {
+    method: "POST",
+    headers: { "x-forwarded-for": "203.0.113.9", "content-type": "application/json" },
+    body: { questionId: "qs-m1-q1", selected: "a", draft: "" },
+    ...overrides
+  };
+}
+
+function mockRes() {
+  const res = {
+    statusCode: 200,
+    body: null as any,
+    status(code: number) {
+      res.statusCode = code;
+      return res;
+    },
+    json(data: unknown) {
+      res.body = data;
+      return res;
+    }
+  };
+  return res;
+}
+
+function handlerWith(overrides: Partial<HandlerOptions> = {}) {
+  const calls: { url: string; init: any }[] = [];
+  const fetchImpl: HandlerOptions["fetchImpl"] =
+    overrides.fetchImpl ||
+    (async (url, init) => {
+      calls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: "A alternativa b está certa porque qualidade inclui atributos não funcionais." } }]
+        })
+      };
+    });
+  return {
+    calls,
+    handle: createHandler({
+      subjects,
+      fetchImpl,
+      getApiKey: () => "sk-test",
+      getModel: () => "gpt-4o-mini",
+      now: () => 1_000_000,
+      buckets: new Map(),
+      ...overrides
+    })
+  };
+}
+
+test("rejects non-POST methods", async () => {
+  const { handle } = handlerWith();
+  const res = mockRes();
+  await handle(mockReq({ method: "GET" }), res);
+  assert.equal(res.statusCode, 405);
+  assert.equal(res.body.error, "method_not_allowed");
+});
+
+test("rejects missing questionId", async () => {
+  const { handle } = handlerWith();
+  const res = mockRes();
+  await handle(mockReq({ body: { selected: "a" } }), res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, "invalid_request");
+});
+
+test("rejects unknown questionId, including old ids without subject prefix", async () => {
+  const { handle } = handlerWith();
+  for (const questionId of ["m9-q99", "m1-q1"]) {
+    const res = mockRes();
+    await handle(mockReq({ body: { questionId, selected: "a", draft: "" } }), res);
+    assert.equal(res.statusCode, 404);
+    assert.equal(res.body.error, "question_not_found");
+  }
+});
+
+test("rejects oversized draft", async () => {
+  const { handle } = handlerWith();
+  const res = mockRes();
+  await handle(
+    mockReq({ body: { questionId: "qs-m1-q2", selected: "", draft: "x".repeat(MAX_DRAFT_LENGTH + 1) } }),
+    res
+  );
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body.error, "draft_too_long");
+});
+
+test("returns unavailable when API key is missing", async () => {
+  const { handle, calls } = handlerWith({ getApiKey: () => "" });
+  const res = mockRes();
+  await handle(mockReq(), res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.error, "unavailable");
+  assert.equal(calls.length, 0);
+});
+
+test("rate-limits the same IP after 30 requests in one hour", async () => {
+  const buckets = new Map<string, number[]>();
+  const { handle } = handlerWith({ buckets, now: () => 1_000_000 });
+  for (let i = 0; i < RATE_LIMIT; i++) {
+    const res = mockRes();
+    await handle(mockReq(), res);
+    assert.equal(res.statusCode, 200, `request ${i + 1}`);
+  }
+  const blocked = mockRes();
+  await handle(mockReq(), blocked);
+  assert.equal(blocked.statusCode, 429);
+  assert.equal(blocked.body.error, "rate_limited");
+});
+
+test("reads a JSON body from the request stream (dev server)", async () => {
+  const { handle, calls } = handlerWith();
+  const res = mockRes();
+  const chunks = [Buffer.from(JSON.stringify({ questionId: "sa-c4-q38", selected: "d" }))];
+  const req = {
+    method: "POST",
+    headers: {},
+    async *[Symbol.asyncIterator]() {
+      yield* chunks;
+    }
+  };
+  await handle(req as any, res);
+  assert.equal(res.statusCode, 200);
+  assert.match(JSON.parse(calls[0].init.body).messages[1].content, /Resposta do estudante: alternativa d/);
+});
+
+test("builds the OpenAI prompt from official content, ignoring client gabarito", async () => {
+  const { handle, calls } = handlerWith();
+  const res = mockRes();
+  await handle(
+    mockReq({
+      body: { questionId: "qs-m1-q1", selected: "a", draft: "", answer: "e", gabarito: "inventado", prompt: "hack" }
+    }),
+    res
+  );
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body.explanation, /alternativa b está certa/);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://api.openai.com/v1/chat/completions");
+  const payload = JSON.parse(calls[0].init.body);
+  assert.equal(payload.model, "gpt-4o-mini");
+  assert.equal(payload.temperature, 0.3);
+  assert.equal(payload.max_tokens, 320);
+  assert.equal(payload.max_completion_tokens, undefined);
+  assert.equal(payload.messages[0].content, buildSystemPrompt(subjects[1]));
+  assert.match(payload.messages[1].content, /Gabarito oficial: b/);
+  assert.doesNotMatch(payload.messages[1].content, /inventado/);
+  assert.doesNotMatch(payload.messages[1].content, /\bhack\b/);
+  assert.equal(calls[0].init.headers.Authorization, "Bearer sk-test");
+});
+
+test("uses max_completion_tokens and default temperature for gpt-6-luna", async () => {
+  const { handle, calls } = handlerWith({ getModel: () => "gpt-6-luna" });
+  const res = mockRes();
+  await handle(mockReq(), res);
+  assert.equal(res.statusCode, 200);
+  const payload = JSON.parse(calls[0].init.body);
+  assert.equal(payload.model, "gpt-6-luna");
+  assert.equal(payload.max_completion_tokens, 320);
+  assert.equal(payload.max_tokens, undefined);
+  assert.equal(payload.temperature, undefined);
+});
+
+test("retries with max_completion_tokens when the model rejects max_tokens", async () => {
+  let calls = 0;
+  const { handle } = handlerWith({
+    getModel: () => "mystery-model",
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      const payload = JSON.parse(init.body);
+      if (payload.max_tokens) {
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({
+            error: {
+              message:
+                "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."
+            }
+          })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: "Explicação após ajuste do parâmetro." } }] })
+      };
+    }
+  });
+  const res = mockRes();
+  await handle(mockReq(), res);
+  assert.equal(calls, 2);
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body.explanation, /ajuste do parâmetro/);
+});
+
+test("returns 502 when OpenAI fails", async () => {
+  const { handle } = handlerWith({
+    fetchImpl: async () => ({ ok: false, status: 500, json: async () => ({ error: { message: "boom" } }) })
+  });
+  const res = mockRes();
+  await handle(mockReq(), res);
+  assert.equal(res.statusCode, 502);
+  assert.equal(res.body.error, "upstream_error");
+});
+
+test("returns 502 when OpenAI sends empty text", async () => {
+  const { handle } = handlerWith({
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: "  " } }] }) })
+  });
+  const res = mockRes();
+  await handle(mockReq(), res);
+  assert.equal(res.statusCode, 502);
+  assert.equal(res.body.error, "upstream_error");
+});

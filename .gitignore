@@ -3,4 +3,7 @@
 .env.local
 .vercel
 node_modules
+dist
 
+# Material de aula das matérias (slides, listas, simulados): fica só na máquina.
+docs/materias/

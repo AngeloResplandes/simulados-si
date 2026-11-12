@@ -1,0 +1,103 @@
+/* Tokens do design aprovado no Claude Design (Simulados SI — mockups). */
+:root {
+  --paper: #f7f4ee;
+  --surface: #ffffff;
+  --surface-2: #f0ece3;
+  --ink: #1c2230;
+  --ink-2: #4d5566;
+  --rule: #e2dcd0;
+  --rule-strong: #b9b1a2;
+  --track: #ede8dd;
+  --accent: #23427a;
+  --accent-hover: #1a3260;
+  --accent-ink: #ffffff;
+  --accent-soft: #e4eaf5;
+  --accent-tint: #eef2f9;
+  --pass: #2e6b4a;
+  --pass-soft: #eaf1ec;
+  --fail: #a0412d;
+  --fail-soft: #f7e5e0;
+  --review: #5e3708;
+  --review-2: #6e4512;
+  --review-soft: #f6ebda;
+  --review-rule: #e8d3b2;
+  --badge-navy-bg: #e4eaf5;
+  --badge-navy-ink: #23427a;
+  --badge-green-bg: #eaf1ec;
+  --badge-green-ink: #2e6b4a;
+  --shadow-card: 0 1px 2px rgb(28 34 48 / 6%), 0 10px 30px rgb(28 34 48 / 7%);
+
+  --font-serif: "Source Serif 4", "Iowan Old Style", Charter, Georgia, serif;
+  --font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 18px;
+  --gutter: 20px;
+  --bar-h: 84px;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --quick: 160ms;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --paper: #11151c;
+  --surface: #19202a;
+  --surface-2: #222a36;
+  --ink: #e8e4da;
+  --ink-2: #a9b0bd;
+  --rule: #2c3542;
+  --rule-strong: #4a5464;
+  --track: #2c3542;
+  --accent: #9db8ea;
+  --accent-hover: #bcd0f3;
+  --accent-ink: #11151c;
+  --accent-soft: #22314a;
+  --accent-tint: #1d2a40;
+  --pass: #86c29f;
+  --pass-soft: #1c3227;
+  --fail: #ee9c88;
+  --fail-soft: #3a2320;
+  --review: #f1cf9c;
+  --review-2: #dcb27a;
+  --review-soft: #33281a;
+  --review-rule: #4d3b22;
+  --badge-navy-bg: #22314a;
+  --badge-navy-ink: #9db8ea;
+  --badge-green-bg: #1c3227;
+  --badge-green-ink: #86c29f;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 10px 30px rgb(0 0 0 / 28%);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #11151c;
+    --surface: #19202a;
+    --surface-2: #222a36;
+    --ink: #e8e4da;
+    --ink-2: #a9b0bd;
+    --rule: #2c3542;
+    --rule-strong: #4a5464;
+    --track: #2c3542;
+    --accent: #9db8ea;
+    --accent-hover: #bcd0f3;
+    --accent-ink: #11151c;
+    --accent-soft: #22314a;
+    --accent-tint: #1d2a40;
+    --pass: #86c29f;
+    --pass-soft: #1c3227;
+    --fail: #ee9c88;
+    --fail-soft: #3a2320;
+    --review: #f1cf9c;
+    --review-2: #dcb27a;
+    --review-soft: #33281a;
+    --review-rule: #4d3b22;
+    --badge-navy-bg: #22314a;
+    --badge-navy-ink: #9db8ea;
+    --badge-green-bg: #1c3227;
+    --badge-green-ink: #86c29f;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 30%), 0 10px 30px rgb(0 0 0 / 28%);
+    color-scheme: dark;
+  }
+}
